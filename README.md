@@ -89,7 +89,7 @@ flowchart TD
 
 ### 1. Clone & Build
 ```bash
-git clone https://github.com/<your-username>/semantic-llm-cache-router.git
+git clone https://github.com/Soham251007/semantic-llm-cache-router.git
 cd semantic-llm-cache-router
 
 # Build the Go gateway
