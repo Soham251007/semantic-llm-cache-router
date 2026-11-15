@@ -21,44 +21,45 @@ Acts as an **OpenAI-compatible drop-in replacement (`POST /v1/chat/completions`)
 
 ```mermaid
 flowchart TD
-    Client["Client Application\n(OpenAI SDK, LangChain, LlamaIndex, cURL)"]
+    Client["Client Application<br/>(OpenAI SDK, LangChain, cURL)"]
     
     subgraph ControlPlane ["Go Control Plane & Reverse Proxy (:8080)"]
-        Proxy["HTTP Reverse Proxy\nPOST /v1/chat/completions"]
-        L1["L1 Exact Cache\n(O(1) SHA-256 Hash Index)"]
-        L2["L2 Semantic Vector Cache\n(In-Memory Cosine / Redis Stack HNSW)"]
-        Streamer["SSE Token Streamer\n(Chunk Replayer)"]
-        Metrics["Prometheus Exporter\n(/metrics)"]
+        Proxy["HTTP Reverse Proxy<br/>POST /v1/chat/completions"]
+        L1["L1 Exact Cache<br/>(O(1) SHA-256 Hash Index)"]
+        L2["L2 Semantic Vector Cache<br/>(In-Memory Cosine / Redis Stack HNSW)"]
+        Streamer["SSE Token Streamer<br/>(Chunk Replayer)"]
+        Metrics["Prometheus Exporter<br/>(/metrics)"]
     end
     
     subgraph MLService ["Python ML Microservice (:8001)"]
-        ONNX["ONNX Runtime Engine\n(all-MiniLM-L6-v2 INT8 — 384 dim)"]
-        DistilBERT["Complexity Classifier\n(DistilBERT Sequence Classifier + Signals)"]
+        ONNX["ONNX Runtime Engine<br/>(all-MiniLM-L6-v2 INT8 — 384 dim)"]
+        DistilBERT["Complexity Classifier<br/>(DistilBERT Sequence Classifier + Signals)"]
     end
     
     subgraph UpstreamTiers ["Upstream Model Tiers"]
-        Tier1["Tier 1: Fast Model\n(Llama-3-8B / Gemini Flash / GPT-4o-mini)\nCost: ~$0.15 / 1M tokens"]
-        Tier2["Tier 2: Frontier Model\n(GPT-4o / Claude 3.5 Sonnet / Gemini Pro)\nCost: ~$2.50 / 1M tokens"]
+        Tier1["Tier 1: Fast Model<br/>(Llama-3-8B / Gemini Flash / GPT-4o-mini)<br/>Cost: ~$0.15 / 1M tokens"]
+        Tier2["Tier 2: Frontier Model<br/>(GPT-4o / Claude 3.5 Sonnet / Gemini Pro)<br/>Cost: ~$2.50 / 1M tokens"]
     end
 
     Client -->|1. Prompt Request| Proxy
     Proxy -->|2. Check Exact Hash| L1
-    L1 -->|Hit <1ms| Streamer -->|Cached Response| Client
+    L1 -->|Hit: Sub-1ms| Streamer
+    Streamer -->|Cached Response| Client
     
     L1 -->|Miss| ONNX
     ONNX -->|384-dim Vector + Complexity Score| Proxy
     
-    Proxy -->|3. Check Vector Cosine >= 0.94| L2
-    L2 -->|Hit <15ms| Streamer -->|Cached Response| Client
+    Proxy -->|3. Check Cosine Similarity| L2
+    L2 -->|Hit: Sub-15ms| Streamer
     
     L2 -->|Miss| DistilBERT
-    DistilBERT -->|Score < 0.45 (Simple)| Tier1
-    DistilBERT -->|Score >= 0.45 (Complex)| Tier2
+    DistilBERT -->|Simple: Fast Model| Tier1
+    DistilBERT -->|Complex: Frontier Model| Tier2
     
     Tier1 -->|Generate| Proxy
     Tier2 -->|Generate| Proxy
-    Proxy -.->|Async Cache Ingestion| L1
-    Proxy -.->|Async Cache Ingestion| L2
+    Proxy -.->|Async Ingestion| L1
+    Proxy -.->|Async Ingestion| L2
     Proxy -->|Stream or JSON Response| Client
 ```
 
