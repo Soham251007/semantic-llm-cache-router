@@ -6,8 +6,9 @@
 *.dylib
 *.bin
 *.pt
-gateway
-benchmarker
+/bin/
+/gateway
+/benchmarker
 
 # Test binary, built with `go test -c`
 *.test
@@ -51,9 +52,10 @@ services/ml_service/models/**/*.safetensors
 services/ml_service/models/**/*.bin
 services/ml_service/models/distilbert_complexity_traced.pt
 
-# IDEs
+# IDEs & System files
 .idea/
 .vscode/
 *.swp
 *.swo
 .DS_Store
+Thumbs.db
