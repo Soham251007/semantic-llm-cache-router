@@ -265,7 +265,7 @@ python services/ml_service/test_ml_service.py
 
 ### Cache Accuracy & Anti-Hallucination Benchmarks
 
-The test suite directly benchmarks false-positive deflection on numeric quantifiers (e.g. 3 vs 5 bullets) and logical polarity (negation pairs):
+The test suite directly benchmarks false-positive deflection on numeric quantifiers and logical polarity (negation pairs):
 
 ```text
 [Numeric & Quantifier Constraint Test (3 vs 5 Bullets)]
