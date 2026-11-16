@@ -17,12 +17,12 @@ import (
 )
 
 type Handler struct {
-	cfg        *config.Config
-	cache      cache.Cache
-	router     *router.Router
-	upstream   *upstream.Client
-	streamer   *upstream.Streamer
-	metrics    *metrics.Metrics
+	cfg      *config.Config
+	cache    cache.Cache
+	router   *router.Router
+	upstream *upstream.Client
+	streamer *upstream.Streamer
+	metrics  *metrics.Metrics
 }
 
 func NewHandler(
@@ -235,7 +235,7 @@ func (h *Handler) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 func (h *Handler) recordHitMetrics(match *cache.MatchResult, cacheStatus string, start time.Time) {
 	h.metrics.RequestsTotal.WithLabelValues("200", cacheStatus, match.Item.Tier).Inc()
 	h.metrics.RequestDuration.WithLabelValues(cacheStatus, match.Item.Tier).Observe(time.Since(start).Seconds())
-	
+
 	cacheTypeLabel := "exact"
 	if match.Type == cache.CacheTypeSemantic {
 		cacheTypeLabel = "semantic"
