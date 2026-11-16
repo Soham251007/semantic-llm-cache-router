@@ -144,7 +144,7 @@ func (h *Handler) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 	// 4. L2 Semantic Vector Cache Check (Cosine Similarity >= 0.94 in <15ms)
 	var semanticMatch *cache.MatchResult
 	if analysis != nil && len(analysis.Embedding) > 0 {
-		semanticMatch, _ = h.cache.GetSemantic(ctx, analysis.Embedding, h.cfg.SimilarityThreshold)
+		semanticMatch, _ = h.cache.GetSemantic(ctx, analysis.Embedding, h.cfg.SimilarityThreshold, analysis.SemanticSignature)
 		if semanticMatch != nil && semanticMatch.Hit {
 			h.recordHitMetrics(semanticMatch, "HIT-SEMANTIC", start)
 			h.injectTelemetryHeaders(w, semanticMatch.Type, semanticMatch.Similarity, analysis.ComplexityScore, semanticMatch.Item.Tier, start, semanticMatch.Item.TokensSaved, semanticMatch.Item.CostSavedUSD)
@@ -186,16 +186,19 @@ func (h *Handler) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 
 	// 6. Asynchronous Cache Ingestion
 	var emb []float32
+	var sig string
 	if analysis != nil {
 		emb = analysis.Embedding
+		sig = analysis.SemanticSignature
 	}
-	go func(itemResp *upstream.ChatCompletionResponse, emb []float32, prompt, canonical, hKey, t string, cUSD float64) {
+	go func(itemResp *upstream.ChatCompletionResponse, emb []float32, prompt, canonical, hKey, t string, cUSD float64, signature string) {
 		cacheItem := &cache.CacheItem{
 			ID:           uuid.New().String(),
 			Prompt:       prompt,
 			Canonical:    canonical,
 			HashKey:      hKey,
 			Embedding:    emb,
+			Signature:    signature,
 			Response:     itemResp,
 			Model:        itemResp.Model,
 			Tier:         t,
@@ -205,7 +208,7 @@ func (h *Handler) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 			ExpiresAt:    time.Now().Add(h.cfg.CacheTTL),
 		}
 		_ = h.cache.Set(context.Background(), cacheItem)
-	}(upstreamResp, emb, userPrompt, canonicalPrompt, hashKey, tier, costUSD)
+	}(upstreamResp, emb, userPrompt, canonicalPrompt, hashKey, tier, costUSD, sig)
 
 	// 7. Inject Headers & Deliver Response
 	var simScore float64 = 0.0

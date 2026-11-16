@@ -21,6 +21,8 @@ type AnalyzeResult struct {
 	RecommendedTier      string    `json:"recommended_tier"`
 	IsComplex            bool      `json:"is_complex"`
 	Signals              []string  `json:"signals"`
+	SemanticSignature   string    `json:"semantic_signature"`
+	Polarity            string    `json:"polarity"`
 	EmbedLatencyMs       float64   `json:"embed_latency_ms"`
 	ComplexityLatencyMs  float64   `json:"complexity_latency_ms"`
 	TotalLatencyMs       float64   `json:"total_latency_ms"`

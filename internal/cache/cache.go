@@ -23,6 +23,7 @@ type CacheItem struct {
 	Canonical    string                          `json:"canonical"`
 	HashKey      string                          `json:"hash_key"`
 	Embedding    []float32                       `json:"embedding"`
+	Signature    string                          `json:"signature"`
 	Response     *upstream.ChatCompletionResponse `json:"response"`
 	Model        string                          `json:"model"`
 	Tier         string                          `json:"tier"`
@@ -58,7 +59,7 @@ type Cache interface {
 	GetExact(ctx context.Context, hashKey string) (*MatchResult, error)
 
 	// GetSemantic searches the vector index for nearest neighbor >= threshold
-	GetSemantic(ctx context.Context, embedding []float32, threshold float64) (*MatchResult, error)
+	GetSemantic(ctx context.Context, embedding []float32, threshold float64, signature ...string) (*MatchResult, error)
 
 	// Set stores a new entry into both exact-hash and semantic vector indices
 	Set(ctx context.Context, item *CacheItem) error

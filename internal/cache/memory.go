@@ -85,11 +85,16 @@ func (m *MemoryCache) GetExact(ctx context.Context, hashKey string) (*MatchResul
 }
 
 // GetSemantic iterates over normalized vector embeddings and calculates cosine similarity
-func (m *MemoryCache) GetSemantic(ctx context.Context, embedding []float32, threshold float64) (*MatchResult, error) {
+func (m *MemoryCache) GetSemantic(ctx context.Context, embedding []float32, threshold float64, signature ...string) (*MatchResult, error) {
 	start := time.Now()
 	if len(embedding) == 0 {
 		m.misses.Add(1)
 		return &MatchResult{Type: CacheTypeNone, Hit: false, Duration: time.Since(start)}, nil
+	}
+
+	targetSig := ""
+	if len(signature) > 0 {
+		targetSig = signature[0]
 	}
 
 	m.mu.RLock()
@@ -101,6 +106,10 @@ func (m *MemoryCache) GetSemantic(ctx context.Context, embedding []float32, thre
 
 	for _, item := range m.vectorItems {
 		if now.After(item.ExpiresAt) {
+			continue
+		}
+		// Enforce semantic signature alignment (polarity & numeric constraints)
+		if targetSig != "" && item.Signature != "" && item.Signature != targetSig {
 			continue
 		}
 		sim := DotProductNormalized(embedding, item.Embedding)

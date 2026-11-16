@@ -13,9 +13,11 @@ import uvicorn
 try:
     from embedding_engine import EmbeddingEngine
     from complexity_scorer import ComplexityScorer
+    from semantic_guard import SemanticGuard
 except ImportError:
     from services.ml_service.embedding_engine import EmbeddingEngine
     from services.ml_service.complexity_scorer import ComplexityScorer
+    from services.ml_service.semantic_guard import SemanticGuard
 
 app = FastAPI(
     title="Semantic Cache & Complexity Router ML Service",
@@ -79,9 +81,25 @@ class AnalyzeResponse(BaseModel):
     recommended_tier: str
     is_complex: bool
     signals: List[str]
+    semantic_signature: str = Field("", description="Normalized semantic constraint & polarity signature")
+    polarity: str = Field("positive", description="Query logical polarity: positive or negative")
     embed_latency_ms: float
     complexity_latency_ms: float
     total_latency_ms: float
+
+class VerifyRequest(BaseModel):
+    query_text: str = Field(..., description="Incoming prompt text")
+    candidate_text: str = Field(..., description="Cached candidate prompt text")
+    similarity: float = Field(..., description="Cosine similarity score between embeddings")
+    threshold: Optional[float] = Field(0.94, description="Similarity threshold")
+
+class VerifyResponse(BaseModel):
+    is_valid_cache_hit: bool
+    reason: str
+    similarity: float
+    query_signature: Optional[str] = ""
+    candidate_signature: Optional[str] = ""
+    latency_ms: float
 
 @app.get("/health")
 def health():
@@ -144,6 +162,9 @@ def analyze(req: AnalyzeRequest):
     t1 = time.perf_counter()
     comp = complexity_scorer.score(req.text, alpha=req.alpha)
     comp_ms = (time.perf_counter() - t1) * 1000.0
+
+    # Semantic Guard Signature Extraction (Polarity, Quantifiers, Constraints)
+    guard_sig = SemanticGuard.extract_signature(req.text)
     
     total_ms = (time.perf_counter() - t_start) * 1000.0
     
@@ -154,9 +175,32 @@ def analyze(req: AnalyzeRequest):
         recommended_tier=comp["recommended_tier"],
         is_complex=comp["is_complex"],
         signals=comp["signals"],
+        semantic_signature=guard_sig["signature"],
+        polarity=guard_sig["polarity"],
         embed_latency_ms=round(embed_ms, 2),
         complexity_latency_ms=round(comp_ms, 2),
         total_latency_ms=round(total_ms, 2)
+    )
+
+@app.post("/verify", response_model=VerifyResponse)
+def verify(req: VerifyRequest):
+    """
+    Two-stage cache validation: verifies whether a candidate cache entry is functionally
+    and semantically identical to the query prompt, eliminating false-positive cache hits.
+    """
+    valid, reason, meta = SemanticGuard.verify(
+        req.query_text,
+        req.candidate_text,
+        req.similarity,
+        threshold=req.threshold or 0.94
+    )
+    return VerifyResponse(
+        is_valid_cache_hit=valid,
+        reason=reason,
+        similarity=req.similarity,
+        query_signature=meta.get("query_signature", ""),
+        candidate_signature=meta.get("candidate_signature", ""),
+        latency_ms=round(meta.get("latency_ms", 0.0), 3)
     )
 
 if __name__ == "__main__":

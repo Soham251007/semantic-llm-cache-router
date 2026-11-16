@@ -117,11 +117,16 @@ func (r *RedisCache) GetExact(ctx context.Context, hashKey string) (*MatchResult
 }
 
 // GetSemantic queries Redis Stack Vector Search using FT.SEARCH with KNN
-func (r *RedisCache) GetSemantic(ctx context.Context, embedding []float32, threshold float64) (*MatchResult, error) {
+func (r *RedisCache) GetSemantic(ctx context.Context, embedding []float32, threshold float64, signature ...string) (*MatchResult, error) {
 	start := time.Now()
 	if len(embedding) == 0 {
 		r.misses.Add(1)
 		return &MatchResult{Type: CacheTypeNone, Hit: false, Duration: time.Since(start)}, nil
+	}
+
+	targetSig := ""
+	if len(signature) > 0 {
+		targetSig = signature[0]
 	}
 
 	vecBytes := Float32ToBytes(embedding)
@@ -174,6 +179,12 @@ func (r *RedisCache) GetSemantic(ctx context.Context, embedding []float32, thres
 	if similarity >= threshold && payloadJSON != "" {
 		var item CacheItem
 		if err := json.Unmarshal([]byte(payloadJSON), &item); err == nil {
+			// Enforce semantic signature alignment (polarity & numeric constraints)
+			if targetSig != "" && item.Signature != "" && item.Signature != targetSig {
+				r.misses.Add(1)
+				return &MatchResult{Type: CacheTypeNone, Hit: false, Similarity: similarity, Duration: time.Since(start)}, nil
+			}
+
 			r.semanticHits.Add(1)
 			r.tokensSaved.Add(int64(item.TokensSaved))
 			r.costSavedUSD.Add(uint64(item.CostSavedUSD * 1e6))

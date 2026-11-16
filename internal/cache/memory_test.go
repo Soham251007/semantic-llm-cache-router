@@ -95,3 +95,70 @@ func TestMemoryCache_ExactAndSemantic(t *testing.T) {
 		t.Errorf("expected CacheTypeNone on miss, got %s", farResult.Type)
 	}
 }
+
+func TestMemoryCache_SemanticGuardConstraintProtection(t *testing.T) {
+	ctx := context.Background()
+	c := NewMemoryCache(1000, 1*time.Hour)
+
+	// Base vector
+	vecBase := make([]float32, 384)
+	vecBase[0] = 1.0
+
+	// Very close vector (similarity = 0.98)
+	vecNear := make([]float32, 384)
+	vecNear[0] = 0.98
+	vecNear[1] = float32(math.Sqrt(1.0 - 0.98*0.98))
+
+	// Store item requesting 3 bullets
+	item3Bullets := &CacheItem{
+		ID:        "item-bullets-3",
+		Prompt:    "Summarize this in 3 bullets",
+		Canonical: "summarize this in 3 bullets",
+		HashKey:   HashPrompt("summarize this in 3 bullets"),
+		Embedding: vecBase,
+		Signature: "pol:positive;q:bullets:3",
+		Response: &upstream.ChatCompletionResponse{
+			ID: "cmpl-3b",
+			Choices: []upstream.ChatCompletionChoice{
+				{Message: upstream.ChatMessage{Role: "assistant", Content: "• One\n• Two\n• Three"}},
+			},
+		},
+		Tier:        "tier-1-fast",
+		TokensSaved: 80,
+	}
+
+	if err := c.Set(ctx, item3Bullets); err != nil {
+		t.Fatalf("failed to set cache item: %v", err)
+	}
+
+	// 1. Query for 5 bullets (Signature: pol:positive;q:bullets:5)
+	// Even though vector similarity is 0.98, the guard must prevent a wrong cache hit!
+	result5Bullets, err := c.GetSemantic(ctx, vecNear, 0.94, "pol:positive;q:bullets:5")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result5Bullets.Hit {
+		t.Fatalf("GUARD FAILED: False-positive cache hit allowed for 5 bullets on a 3-bullet cached entry!")
+	}
+
+	// 2. Query with polarity inversion (e.g. negation "not")
+	resultNegated, err := c.GetSemantic(ctx, vecNear, 0.94, "pol:negative;q:bullets:3")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resultNegated.Hit {
+		t.Fatalf("GUARD FAILED: False-positive cache hit allowed for negated prompt on positive entry!")
+	}
+
+	// 3. Query with matching signature (3 bullets) -> MUST HIT!
+	resultMatching, err := c.GetSemantic(ctx, vecNear, 0.94, "pol:positive;q:bullets:3")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resultMatching.Hit {
+		t.Fatalf("expected semantic cache hit for matching prompt with 3 bullets, got miss")
+	}
+	if resultMatching.Similarity < 0.94 {
+		t.Errorf("expected similarity >= 0.94, got %f", resultMatching.Similarity)
+	}
+}
