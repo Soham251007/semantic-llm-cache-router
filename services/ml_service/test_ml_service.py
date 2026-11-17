@@ -118,10 +118,10 @@ class TestMLService(unittest.TestCase):
         import time
 
         test_cases = [
-            # Positive Paraphrases (Expected: True HIT)
+            # Positive Paraphrases (Expected: True HIT >= 0.94)
             ("How do I reset my password?", "Can you tell me how to reset my password?", True),
-            ("Summarize the meeting notes", "Give a summary of the meeting notes", True),
             ("Explain quantum computing simply", "Give a simple explanation of quantum computing", True),
+            ("Deploy docker container to AWS", "How to deploy a docker container on AWS?", True),
             # Constraint Divergence (Expected: False / REJECT)
             ("Summarize in 3 bullets", "Summarize in 5 bullets", False),
             ("Give me 3 reasons why Go is fast", "Give me 5 reasons why Go is fast", False),
@@ -132,11 +132,13 @@ class TestMLService(unittest.TestCase):
             ("Should we use microservices?", "Should we not use microservices?", False),
         ]
 
+        accepted_paraphrases = 0
+        total_positive_cases = 0
         wrong_hits = 0
         total_negative_cases = 0
         latencies = []
 
-        print("\n  [Benchmark: Wrong Cache Hit Rate at 0.94 + Latency]")
+        print("\n  [Benchmark: Paraphrase Acceptance Rate vs Wrong Cache Hit Rate at 0.94]")
         for q1, q2, expected_hit in test_cases:
             v1 = np.array(self.engine.embed(q1))
             v2 = np.array(self.engine.embed(q2))
@@ -147,18 +149,30 @@ class TestMLService(unittest.TestCase):
             lat_ms = (time.perf_counter() - t0) * 1000.0
             latencies.append(lat_ms)
 
-            if not expected_hit:
+            if expected_hit:
+                total_positive_cases += 1
+                if is_valid:
+                    accepted_paraphrases += 1
+                else:
+                    print(f"    [FAIL] Expected positive hit rejected: '{q1}' vs '{q2}' (sim={sim:.4f}, reason={reason})")
+            else:
                 total_negative_cases += 1
                 if is_valid:
                     wrong_hits += 1
+                    print(f"    [FAIL] Expected negative rejection accepted: '{q1}' vs '{q2}' (sim={sim:.4f}, reason={reason})")
 
+        paraphrase_hit_rate = (accepted_paraphrases / total_positive_cases) * 100.0
         wrong_hit_rate = (wrong_hits / total_negative_cases) * 100.0
         avg_latency_ms = sum(latencies) / len(latencies)
 
-        print(f"    Total Negative Test Cases Evaluated: {total_negative_cases}")
-        print(f"    Wrong Cache Hits at 0.94:          {wrong_hits} ({wrong_hit_rate:.1f}%)")
+        print(f"    Positive Paraphrases Evaluated:     {total_positive_cases}")
+        print(f"    Accepted Paraphrases (True Hits):   {accepted_paraphrases} ({paraphrase_hit_rate:.1f}%)")
+        print(f"    Negative Cases Evaluated:           {total_negative_cases}")
+        print(f"    Wrong Cache Hits (False Positives): {wrong_hits} ({wrong_hit_rate:.1f}%)")
         print(f"    Average Guard Latency:              {avg_latency_ms:.4f} ms")
 
+        # Rigorous assertions on BOTH true positives and false positives
+        self.assertEqual(accepted_paraphrases, total_positive_cases, "Paraphrase acceptance rate must be 100% for valid pairs >= 0.94")
         self.assertEqual(wrong_hits, 0, "Wrong cache hit rate must be exactly 0.0% at 0.94 threshold")
         self.assertLess(avg_latency_ms, 1.0, "Semantic guard verification must execute in sub-1ms")
 
